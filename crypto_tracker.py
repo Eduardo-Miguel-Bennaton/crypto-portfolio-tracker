@@ -9,21 +9,18 @@ st.set_page_config(page_title="Crypto Portfolio Tracker", layout="wide")
 
 st.markdown("""
 <style>
-.block-container {
-    padding-top: 1rem; /* Adjust this value as needed, e.g., 1rem, 20px */
+#MainMenu {visibility: hidden;}
+footer {visibility: hidden;}
+.stDeployButton {display: none;}
+header {visibility: hidden;} /* Hides the top header bar */
+
+/* Adjust top padding of the main content block */
+div[data-testid="stMainBlockContainer"] {
+    padding-top: 1rem; /* Adjust this value as needed, e.g., 0rem for no padding, 1rem for some */
 }
 </style>
 """, unsafe_allow_html=True)
 
-hide_streamlit_ui = """
-<style>
-#MainMenu {visibility: hidden;}
-footer {visibility: hidden;}
-.stDeployButton {display: none;}
-header {visibility: hidden;} /* Add this line to hide the header */
-</style>
-"""
-st.markdown(hide_streamlit_ui, unsafe_allow_html=True)
 
 @st.cache_data(ttl=3600)
 def get_crypto_prices(coin_ids):
@@ -263,19 +260,34 @@ else:
     st.subheader("Portfolio Summary")
     st.metric(label="Total Portfolio Value", value=f"${total_portfolio_value:,.2f}")
 
-    pie_chart_data = portfolio_df[portfolio_df['raw_current_value'] > 0]
+    # --- Start of Pie Chart Fix ---
+    # Filter out extremely small values for the pie chart
+    min_percentage_for_chart = 0.0001 # 0.0001% (0.000001 of total)
 
-    if total_portfolio_value > 0 and not pie_chart_data.empty:
-        fig = px.pie(
-            pie_chart_data,
-            values='raw_current_value',
-            names='Ticker',
-            title='Portfolio Distribution by Value',
-            hole=0.4
-        )
-        fig.update_traces(textinfo='percent+label', pull=[0.01] * len(pie_chart_data))
-        fig.update_layout(showlegend=True, height=500, width=700)
-        st.plotly_chart(fig, use_container_width=True)
+    if total_portfolio_value > 0:
+        # Calculate each holding's percentage of the total portfolio
+        portfolio_df['percentage'] = (portfolio_df['raw_current_value'] / total_portfolio_value) * 100
+        
+        # Filter for values that are above the minimum percentage
+        # We also ensure raw_current_value is strictly greater than 0 to avoid division by zero issues
+        pie_chart_data = portfolio_df[
+            (portfolio_df['raw_current_value'] > 0) & 
+            (portfolio_df['percentage'] >= min_percentage_for_chart)
+        ]
+        
+        if not pie_chart_data.empty:
+            fig = px.pie(
+                pie_chart_data,
+                values='raw_current_value',
+                names='Ticker',
+                title='Portfolio Distribution by Value',
+                hole=0.4
+            )
+            fig.update_traces(textinfo='percent+label', pull=[0.01] * len(pie_chart_data))
+            fig.update_layout(showlegend=True, height=500, width=700)
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("No holdings with a significant positive value to display in the pie chart. Try adding more substantial holdings.")
     else:
         st.info("No holdings with a positive value to display in the pie chart or portfolio is empty.")
 
