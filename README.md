@@ -55,3 +55,7 @@ If the project has been modularized into separate files:
 * `ui_components.py`: Houses functions responsible for rendering specific UI elements and forms.
 
 This separation enhances readability, maintainability, and reusability of the code.
+
+<img width="400" alt="image" src="https://github.com/user-attachments/assets/0e96543d-4c83-4e05-9cc1-9331c7eaf3ba" />
+<img width="600" alt="image" src="https://github.com/user-attachments/assets/b3a97829-1034-47ac-a931-0b6fbdb69cbe" />
+
