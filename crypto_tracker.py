@@ -7,6 +7,15 @@ import json
 
 st.set_page_config(page_title="Crypto Portfolio Tracker", layout="wide")
 
+hide_streamlit_ui = """
+<style>
+#MainMenu {visibility: hidden;}
+footer {visibility: hidden;}
+.stDeployButton {display: none;}
+</style>
+"""
+st.markdown(hide_streamlit_ui, unsafe_allow_html=True)
+
 @st.cache_data(ttl=3600)
 def get_crypto_prices(coin_ids):
     """
@@ -153,7 +162,6 @@ else:
     coin_ids_to_fetch = holdings_df['coingecko_id'].unique().tolist()
     
     current_prices = get_crypto_prices(coin_ids_to_fetch)
-
     portfolio_data = []
     total_portfolio_value = 0.0
     
