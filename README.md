@@ -1,4 +1,4 @@
-#Crypto Portfolio Tracker
+# Crypto Portfolio Tracker
 
 A responsive web application built with Streamlit to help users track their cryptocurrency holdings with live price data from CoinGecko. This tool provides a clear overview of your digital asset portfolio, including current prices, total values, and a visual distribution of your investments.
 
