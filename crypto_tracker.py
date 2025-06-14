@@ -279,11 +279,12 @@ else:
                 # The primary "Delete Selected" button will trigger a rerun.
 
             new_checkbox_state = row_controls[0].checkbox(
-                "", 
-                value=initial_checkbox_state, 
+                "Select " + symbol, # Provide a descriptive label
+                value=initial_checkbox_state,
                 key=checkbox_key,
-                on_change=update_selected_rows, # Call this function when checkbox changes
-                args=(symbol,) # Pass the symbol to the callback function
+                on_change=update_selected_rows,
+                args=(symbol,),
+                label_visibility="hidden" # Hide the label visually
             )
             # The direct update to st.session_state.selected_rows is now handled by on_change
             # No need for the if new_checkbox_state / else st.session_state.selected_rows.discard lines here.
@@ -306,7 +307,17 @@ else:
                     current_holding_amount = holding["amount"]
                     break
 
+                        # Before
             new_amount = cols[2].number_input("Edit amount", value=current_holding_amount, key=f"edit_input_{symbol}_value", format="%.8f")
+
+            # After
+            new_amount = cols[2].number_input(
+                "Edit amount for " + symbol, # Descriptive label
+                value=current_holding_amount, 
+                key=f"edit_input_{symbol}_value", 
+                format="%.8f",
+                label_visibility="hidden" # Hide if you want it to appear label-less
+            )
 
             cols[1].write(symbol)
             cols[3].write(f"${price:,.2f}")
