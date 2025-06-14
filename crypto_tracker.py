@@ -7,11 +7,20 @@ import json
 
 st.set_page_config(page_title="Crypto Portfolio Tracker", layout="wide")
 
+st.markdown("""
+<style>
+.block-container {
+    padding-top: 1rem; /* Adjust this value as needed, e.g., 1rem, 20px */
+}
+</style>
+""", unsafe_allow_html=True)
+
 hide_streamlit_ui = """
 <style>
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
 .stDeployButton {display: none;}
+header {visibility: hidden;} /* Add this line to hide the header */
 </style>
 """
 st.markdown(hide_streamlit_ui, unsafe_allow_html=True)
