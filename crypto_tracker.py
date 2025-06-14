@@ -174,12 +174,14 @@ for i, h in enumerate(st.session_state.portfolio):
 
 if holdings_data:
     # Build dataframe as usual
+    # Current dataframe
     df = pd.DataFrame(holdings_data)
 
-    # Remove 'id' column before feeding into data_editor
-    df_display = df.drop(columns=['id'])
+    # Reorder columns: Select comes first, then ID, then the rest
+    column_order = ['Select', 'id', 'Ticker', 'Amount', 'Price (USD)', 'Value (USD)']
+    df = df[column_order]  # <- reorder columns here
 
-    # Create editor config without 'id'
+    # Then pass to data_editor
     edited_df = st.data_editor(
         df,
         column_config={
@@ -187,7 +189,7 @@ if holdings_data:
                 "ID",
                 help="Internal ID",
                 width="small",
-                disabled=True  # prevent editing but keep in DataFrame
+                disabled=True
             ),
             "Select": st.column_config.CheckboxColumn(
                 "Select",
@@ -223,6 +225,7 @@ if holdings_data:
         use_container_width=True,
         key="portfolio_editor"
     )
+
 
     # Check for amount edits
     current_portfolio_tickers = {h["ticker"]: h for h in st.session_state.portfolio}
