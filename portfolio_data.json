@@ -1,0 +1,14 @@
+[
+    {
+        "ticker": "ETC",
+        "coingecko_id": "ethereum-classic",
+        "amount": 10000.0,
+        "cost_basis": 0.0
+    },
+    {
+        "ticker": "BTC",
+        "coingecko_id": "osmosis-allbtc",
+        "amount": 10000.0,
+        "cost_basis": 0.0
+    }
+]

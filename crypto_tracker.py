@@ -1,295 +1,273 @@
 import streamlit as st
-import requests
-import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
 import json
+import os
+import plotly.graph_objects as go
+import requests
+import time
+import pandas as pd
+
+DATA_FILE = "portfolio_data.json"
 
 st.set_page_config(page_title="Crypto Portfolio Tracker", layout="wide")
 
 st.markdown("""
 <style>
+/* Hide default Streamlit elements */
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
 .stDeployButton {display: none;}
-header {visibility: hidden;} /* Hides the top header bar */
+header {visibility: hidden;}
+div[data-testid="stMainBlockContainer"] { padding-top: 1rem; }
 
-/* Adjust top padding of the main content block */
-div[data-testid="stMainBlockContainer"] {
-    padding-top: 1rem; /* Adjust this value as needed, e.g., 0rem for no padding, 1rem for some */
+/* Smooth buttons */
+button {
+    transition: all 0.2s ease;
 }
+button:hover {
+    transform: scale(1.05);
+}
+
+/* Section divider */
+hr {
+    border-top: 2px solid #e0e0e0;
+}
+
+/* Portfolio total emphasis */
+.total-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #2e7d32;
+}
+
+/* REMOVED: No longer need to hide the "Add row" button as num_rows is now fixed */
 </style>
 """, unsafe_allow_html=True)
 
-
 @st.cache_data(ttl=3600)
 def get_crypto_prices(coin_ids):
-    """
-    Fetches real-time cryptocurrency prices from the CoinGecko API.
-
-    Args:
-        coin_ids (list): A list of CoinGecko coin IDs (e.g., ['bitcoin', 'ethereum']).
-
-    Returns:
-        dict: A dictionary where keys are CoinGecko coin IDs and values are their
-              current prices in USD. Returns an empty dictionary if the API call fails.
-    """
     if not coin_ids:
         return {}
-
     ids_param = ",".join(coin_ids)
     url = f"https://api.coingecko.com/api/v3/simple/price?ids={ids_param}&vs_currencies=usd"
-    
     try:
         response = requests.get(url, timeout=10)
         response.raise_for_status()
         data = response.json()
-        
         prices = {}
         for coin_id in coin_ids:
-            if coin_id in data and 'usd' in data[coin_id]:
-                prices[coin_id] = data[coin_id]['usd']
-            else:
-                st.warning(f"Could not fetch price for '{coin_id}'. It might be an invalid ID or temporary API issue. Setting price to $0.00.")
-                prices[coin_id] = 0.0
+            prices[coin_id] = data.get(coin_id, {}).get('usd', 0.0)
         return prices
-    except requests.exceptions.RequestException as e:
-        st.error(f"Error fetching crypto prices: {e}. Please check your internet connection or CoinGecko API status.")
-        return {} # Return empty dictionary on error
-    except json.JSONDecodeError:
-        st.error("Error decoding JSON response from CoinGecko API. The API might be returning an invalid response.")
-        return {}
     except Exception as e:
-        st.error(f"An unexpected error occurred: {e}")
+        st.error(f"Error fetching crypto prices: {e}")
         return {}
 
-
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=86400)
 def get_coin_list():
-    """
-    Fetches the list of supported coins from CoinGecko API to help with ID mapping.
-
-    Returns:
-        dict: A dictionary mapping coin symbols (like 'btc') and names ('Bitcoin') to their
-              CoinGecko IDs ('bitcoin').
-    """
     url = "https://api.coingecko.com/api/v3/coins/list"
     try:
         response = requests.get(url, timeout=10)
         response.raise_for_status()
         coins_data = response.json()
-        
         coin_map = {}
         for coin in coins_data:
             coin_map[coin['symbol'].lower()] = coin['id']
             coin_map[coin['name'].lower()] = coin['id']
         return coin_map
-    except requests.exceptions.RequestException as e:
-        st.error(f"Error fetching coin list: {e}. Some coin lookups might fail.")
-        return {}
-    except json.JSONDecodeError:
-        st.error("Error decoding JSON response from CoinGecko API for coin list.")
-        return {}
     except Exception as e:
-        st.error(f"An unexpected error occurred while fetching coin list: {e}")
+        st.error(f"Error fetching coin list: {e}")
         return {}
 
 coin_id_map = get_coin_list()
 
 def get_coingecko_id(ticker_or_name):
-    """
-    Converts a common ticker (e.g., 'BTC') or name ('Bitcoin') to its CoinGecko ID.
-    """
-    lookup_key = ticker_or_name.lower()
-    return coin_id_map.get(lookup_key)
+    return coin_id_map.get(ticker_or_name.lower())
 
+def load_portfolio():
+    if os.path.exists(DATA_FILE):
+        try:
+            with open(DATA_FILE, "r") as f:
+                data = json.load(f)
+                return data if isinstance(data, list) else []
+        except json.JSONDecodeError:
+            return []
+    return []
+
+def save_portfolio(portfolio):
+    with open(DATA_FILE, "w") as f:
+        json.dump(portfolio, f, indent=4)
+
+for key, default in {
+    "portfolio": load_portfolio(),
+    "ticker_not_found": False,
+    "ticker_warning_message": ""
+}.items():
+    if key not in st.session_state:
+        st.session_state[key] = default
 
 st.title("Crypto Portfolio Tracker")
-st.markdown("""
-    Enter your cryptocurrency holdings below to track their real-time value and performance.
-    Prices are fetched from CoinGecko.
-""")
+st.markdown("Track your cryptocurrency holdings with live prices from CoinGecko.")
 
-if 'holdings' not in st.session_state:
-    st.session_state.holdings = []
+with st.form("add_coin_form"):
+    col1, col2, col3 = st.columns([4, 3, 2])
+    with col1:
+        symbol_input = st.text_input("Crypto Ticker or Name", key="add_symbol_input", label_visibility="hidden").upper().strip()
+        if st.session_state.ticker_not_found:
+            st.error(st.session_state.ticker_warning_message)
+    with col2:
+        amount_input = st.number_input("Amount", min_value=0.0, format="%.8f", key="add_amount_input", label_visibility="hidden")
+    submitted = col3.form_submit_button("Add")
 
-if 'new_ticker_input_value' not in st.session_state:
-    st.session_state.new_ticker_input_value = ""
-if 'new_amount_input_value' not in st.session_state:
-    st.session_state.new_amount_input_value = 0.0
-
-st.subheader("Add New Holding")
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    new_ticker = st.text_input(
-        "Crypto Ticker or Name (e.g., BTC, ETH)",
-        value=st.session_state.new_ticker_input_value,
-        key="add_new_ticker_input"
-    ).strip()
-with col2:
-    new_amount = st.number_input(
-        "Amount (e.g., 0.5, 100)",
-        min_value=0.0,
-        value=st.session_state.new_amount_input_value,
-        key="add_new_amount_input",
-        format="%.8f"
-    )
-with col3:
-    st.markdown("<div style='height: 33px;'></div>", unsafe_allow_html=True)
-    if st.button("Add Holding", key="add_holding_button"):
-        if new_ticker and new_amount > 0:
-            coingecko_id = get_coingecko_id(new_ticker)
+    if submitted:
+        st.session_state.ticker_not_found = False
+        st.session_state.ticker_warning_message = ""
+        if symbol_input and amount_input > 0:
+            coingecko_id = get_coingecko_id(symbol_input)
             if coingecko_id:
-                st.session_state.holdings.append({
-                    "ticker": new_ticker.upper(),
-                    "coingecko_id": coingecko_id,
-                    "amount": new_amount,
-                    "cost_basis": 0.0
-                })
-                st.success(f"Added {new_amount} {new_ticker.upper()} to your portfolio!")
-                st.session_state.new_ticker_input_value = ""
-                st.session_state.new_amount_input_value = 0.0
+                found = False
+                for holding in st.session_state.portfolio:
+                    if holding["coingecko_id"] == coingecko_id:
+                        holding["amount"] += amount_input
+                        st.success(f"Updated {symbol_input} to {holding['amount']:,.8f}")
+                        found = True
+                        break
+                if not found:
+                    st.session_state.portfolio.append({
+                        "ticker": symbol_input,
+                        "coingecko_id": coingecko_id,
+                        "amount": amount_input
+                    })
+                    st.success(f"Added {amount_input:,.8f} {symbol_input}")
+                save_portfolio(st.session_state.portfolio)
+                time.sleep(1)
                 st.rerun()
             else:
-                st.error(f"Could not find CoinGecko ID for '{new_ticker}'. Please check the ticker/name.")
+                st.session_state.ticker_not_found = True
+                st.session_state.ticker_warning_message = "Invalid ticker. Please enter a valid crypto."
+                time.sleep(1)
+                st.rerun()
         else:
-            st.warning("Please enter both a crypto ticker/name and an amount greater than zero.")
+            st.warning("Fill both fields.")
+            time.sleep(1)
+            st.rerun()
 
-st.markdown("---")
+coin_ids = list(set([h["coingecko_id"] for h in st.session_state.portfolio]))
+prices = get_crypto_prices(coin_ids)
 
-st.subheader("Your Current Holdings")
+holdings_data = []
+total_value = 0.0
+for i, h in enumerate(st.session_state.portfolio):
+    price = prices.get(h["coingecko_id"], 0.0)
+    value = price * h["amount"]
+    total_value += value
+    holdings_data.append({
+        "id": i,
+        "Select": False,
+        "Ticker": h["ticker"],
+        "Amount": h["amount"],
+        "Price (USD)": f"${price:,.2f}",
+        "Value (USD)": f"${value:,.2f}"
+    })
 
-if not st.session_state.holdings:
-    st.info("No holdings added yet. Use the 'Add New Holding' section above.")
-else:
-    holdings_df = pd.DataFrame(st.session_state.holdings)
-    
-    coin_ids_to_fetch = holdings_df['coingecko_id'].unique().tolist()
-    
-    current_prices = get_crypto_prices(coin_ids_to_fetch)
-    portfolio_data = []
-    total_portfolio_value = 0.0
-    
-    for index, row in holdings_df.iterrows():
-        coingecko_id = row['coingecko_id']
-        current_price = current_prices.get(coingecko_id, 0.0)
-        current_value = row['amount'] * current_price
-        total_portfolio_value += current_value
+if holdings_data:
+    df = pd.DataFrame(holdings_data)
 
-        portfolio_data.append({
-            "Ticker": row['ticker'],
-            "Amount": row['amount'],
-            "Current Price (USD)": f"${current_price:,.2f}",
-            "Current Value (USD)": f"${current_value:,.2f}",
-            "coingecko_id": coingecko_id,
-            "raw_current_value": current_value,
-            "index": index
-        })
+    column_order = ['Select', 'id', 'Ticker', 'Amount', 'Price (USD)', 'Value (USD)']
+    df = df[column_order]
 
-    portfolio_df = pd.DataFrame(portfolio_data)
-    
-    st.table(portfolio_df[['Ticker', 'Amount', 'Current Price (USD)', 'Current Value (USD)']])
-
-    st.markdown("---")
-    
-    st.subheader("Edit Holding")
-
-    edit_holding_options = ["Select a holding to edit"] + [
-        f"{h['ticker']} ({h['amount']})" for h in st.session_state.holdings
-    ]
-
-    selected_edit_option_index = st.selectbox(
-        "Select holding to edit:",
-        options=range(len(edit_holding_options)),
-        format_func=lambda x: edit_holding_options[x],
-        key="edit_holding_select"
+    edited_df = st.data_editor(
+        df,
+        column_config={
+            "id": st.column_config.Column(
+                "ID",
+                help="Internal ID",
+                width="small",
+                disabled=True
+            ),
+            "Select": st.column_config.CheckboxColumn(
+                "Select",
+                help="Select row for deletion",
+                default=False,
+                width="small",
+            ),
+            "Ticker": st.column_config.Column(
+                "Ticker",
+                help="Cryptocurrency Ticker",
+                width="medium",
+                disabled=True
+            ),
+            "Amount": st.column_config.NumberColumn(
+                "Amount",
+                help="Your holding amount",
+                min_value=0.0,
+                format="%.8f",
+            ),
+            "Price (USD)": st.column_config.Column(
+                "Price (USD)",
+                help="Current price in USD",
+                disabled=True
+            ),
+            "Value (USD)": st.column_config.Column(
+                "Value (USD)",
+                help="Total value in USD",
+                disabled=True
+            )
+        },
+        hide_index=True,
+        num_rows="fixed",
+        use_container_width=True,
+        key="portfolio_editor"
     )
 
-    if selected_edit_option_index > 0:
-        selected_holding_index = selected_edit_option_index - 1
-        holding_to_edit = st.session_state.holdings[selected_holding_index]
-
-        st.markdown(f"**Editing: {holding_to_edit['ticker']} ({holding_to_edit['amount']})**")
-
-        edit_col1, edit_col2 = st.columns(2)
-        with edit_col1:
-            edited_amount = st.number_input(
-                "New Amount:",
-                min_value=0.0,
-                value=holding_to_edit['amount'],
-                key=f"edit_amount_input_{selected_holding_index}",
-                format="%.8f"
-            )
-        with edit_col2:
-            st.markdown("<div style='height: 33px;'></div>", unsafe_allow_html=True)
-            if st.button("Update Holding", key=f"update_holding_button_{selected_holding_index}"):
-                if edited_amount >= 0:
-                    st.session_state.holdings[selected_holding_index]['amount'] = edited_amount
-                    st.success(f"Updated {holding_to_edit['ticker']} to {edited_amount} units.")
+    current_portfolio_tickers = {h["ticker"]: h for h in st.session_state.portfolio}
+    
+    for _, row in edited_df.iterrows():
+        original_holding = current_portfolio_tickers.get(row['Ticker'])
+        if original_holding:
+            new_amount = row['Amount']
+            if original_holding["amount"] != new_amount:
+                if isinstance(new_amount, (int, float)) and new_amount >= 0:
+                    for h in st.session_state.portfolio:
+                        if h["ticker"] == row['Ticker']:
+                            h["amount"] = new_amount
+                            break
+                    save_portfolio(st.session_state.portfolio)
+                    st.toast(f"Updated {row['Ticker']} amount to {new_amount:,.8f}", icon="✅")
+                    time.sleep(0.5)
                     st.rerun()
                 else:
-                    st.error("Amount cannot be negative.")
-    else:
-        st.info("Select a holding from the dropdown above to edit its amount.")
+                    st.error("Amount cannot be negative or invalid.")
+                    time.sleep(0.5)
+                    st.rerun()
 
-    st.markdown("---")
-
-    st.subheader("Remove Holding")
-    holding_options_remove = ["Select a holding to remove"] + [
-        f"{h['ticker']} ({h['amount']})" for h in st.session_state.holdings
-    ]
-
-    holding_to_remove_idx = st.selectbox(
-        "Select a holding to remove:",
-        options=range(len(holding_options_remove)),
-        format_func=lambda x: holding_options_remove[x],
-        key="remove_holding_select"
-    )
-
-    if holding_to_remove_idx > 0:
-        if st.button("Remove Selected Holding", key="remove_selected_button"):
-            removed_holding = st.session_state.holdings.pop(holding_to_remove_idx - 1)
-            st.success(f"Removed {removed_holding['amount']} {removed_holding['ticker']} from your portfolio.")
+    selected_for_deletion_indices = edited_df[edited_df['Select'] == True]['id'].tolist()
+    
+    if selected_for_deletion_indices:
+        if st.button("Delete Selected", type="primary"):
+            st.session_state.portfolio = [
+                holding for h_idx, holding in enumerate(st.session_state.portfolio)
+                if h_idx not in selected_for_deletion_indices
+            ]
+            save_portfolio(st.session_state.portfolio)
+            st.success("Deleted selected holdings.")
+            time.sleep(1)
             st.rerun()
     else:
-        st.info("Select a holding from the dropdown above to remove it.")
+        st.button("Delete Selected", disabled=True)
 
-    st.markdown("---")
+else:
+    st.info("Your portfolio is empty. Add your first holding above.")
 
-    st.subheader("Portfolio Summary")
-    st.metric(label="Total Portfolio Value", value=f"${total_portfolio_value:,.2f}")
+st.divider()
 
-    # --- Start of Pie Chart Fix ---
-    # Filter out extremely small values for the pie chart
-    min_percentage_for_chart = 0.0001 # 0.0001% (0.000001 of total)
+st.markdown(f"<div class='total-value'>Total: ${total_value:,.2f}</div>", unsafe_allow_html=True)
 
-    if total_portfolio_value > 0:
-        # Calculate each holding's percentage of the total portfolio
-        portfolio_df['percentage'] = (portfolio_df['raw_current_value'] / total_portfolio_value) * 100
-        
-        # Filter for values that are above the minimum percentage
-        # We also ensure raw_current_value is strictly greater than 0 to avoid division by zero issues
-        pie_chart_data = portfolio_df[
-            (portfolio_df['raw_current_value'] > 0) & 
-            (portfolio_df['percentage'] >= min_percentage_for_chart)
-        ]
-        
-        if not pie_chart_data.empty:
-            fig = px.pie(
-                pie_chart_data,
-                values='raw_current_value',
-                names='Ticker',
-                title='Portfolio Distribution by Value',
-                hole=0.4
-            )
-            fig.update_traces(textinfo='percent+label', pull=[0.01] * len(pie_chart_data))
-            fig.update_layout(showlegend=True, height=500, width=700)
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("No holdings with a significant positive value to display in the pie chart. Try adding more substantial holdings.")
+if holdings_data:
+    non_zero = [h for h in st.session_state.portfolio if prices.get(h["coingecko_id"], 0.0) * h["amount"] > 0]
+    if non_zero:
+        labels = [h["ticker"] for h in non_zero]
+        values = [prices.get(h["coingecko_id"], 0.0) * h["amount"] for h in non_zero]
+        fig = go.Figure(data=[go.Pie(labels=labels, values=values, hole=0.4)])
+        fig.update_layout(margin=dict(t=20, b=20, l=0, r=0))
+        st.plotly_chart(fig, use_container_width=True)
     else:
-        st.info("No holdings with a positive value to display in the pie chart or portfolio is empty.")
-
-st.markdown("---")
-st.caption("This project was developed by Eduardo Miguel Bennaton solely for demonstration purposes.")
+        st.warning("No holdings with value to visualize.")
