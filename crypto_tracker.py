@@ -40,10 +40,7 @@ hr {
     color: #2e7d32;
 }
 
-/* --- NEW: Hide the "Add row" button from the data editor --- */
-button[data-testid="stDataFrameAddRowButton"] {
-    display: none !important;
-}
+/* REMOVED: No longer need to hide the "Add row" button as num_rows is now fixed */
 </style>
 """, unsafe_allow_html=True)
 
@@ -94,7 +91,6 @@ def load_portfolio():
                 data = json.load(f)
                 return data if isinstance(data, list) else []
         except json.JSONDecodeError:
-            # Handle empty or malformed JSON file
             return []
     return []
 
@@ -168,7 +164,8 @@ for i, h in enumerate(st.session_state.portfolio):
     value = price * h["amount"]
     total_value += value
     holdings_data.append({
-        "id": i, # Unique ID for each row, helpful for tracking deletions
+        "id": i, # Unique ID for each row, helpful for tracking
+        "Select": False, # NEW: Add a boolean column for manual selection
         "Ticker": h["ticker"],
         "Amount": h["amount"],
         "Price (USD)": f"${price:,.2f}",
@@ -176,23 +173,33 @@ for i, h in enumerate(st.session_state.portfolio):
     })
 
 if holdings_data:
+    # Build dataframe as usual
     df = pd.DataFrame(holdings_data)
 
-    # Streamlit Data Editor
+    # Remove 'id' column before feeding into data_editor
+    df_display = df.drop(columns=['id'])
+
+    # Create editor config without 'id'
     edited_df = st.data_editor(
         df,
         column_config={
             "id": st.column_config.Column(
-                "Select",
-                help="Select to delete",
+                "ID",
+                help="Internal ID",
                 width="small",
-                disabled=True # 'id' column should not be editable directly
+                disabled=True  # prevent editing but keep in DataFrame
+            ),
+            "Select": st.column_config.CheckboxColumn(
+                "Select",
+                help="Select row for deletion",
+                default=False,
+                width="small",
             ),
             "Ticker": st.column_config.Column(
                 "Ticker",
                 help="Cryptocurrency Ticker",
                 width="medium",
-                disabled=True # Ticker should not be editable after adding
+                disabled=True
             ),
             "Amount": st.column_config.NumberColumn(
                 "Amount",
@@ -203,63 +210,59 @@ if holdings_data:
             "Price (USD)": st.column_config.Column(
                 "Price (USD)",
                 help="Current price in USD",
-                disabled=True # Price is live, not editable
+                disabled=True
             ),
             "Value (USD)": st.column_config.Column(
                 "Value (USD)",
                 help="Total value in USD",
-                disabled=True # Value is calculated, not editable
+                disabled=True
             )
         },
         hide_index=True,
-        # Changed back to "dynamic" to bring back the "Select" column (checkboxes)
-        num_rows="dynamic", 
+        num_rows="fixed",
         use_container_width=True,
         key="portfolio_editor"
     )
 
-    # Get the state of the data editor safely
-    editor_state = st.session_state.get('portfolio_editor', {})
+    # Check for amount edits
+    current_portfolio_tickers = {h["ticker"]: h for h in st.session_state.portfolio}
+    
+    for _, row in edited_df.iterrows():
+        original_holding = current_portfolio_tickers.get(row['Ticker'])
+        if original_holding:
+            new_amount = row['Amount']
+            # Compare with original amount before committing changes
+            if original_holding["amount"] != new_amount:
+                if isinstance(new_amount, (int, float)) and new_amount >= 0:
+                    for h in st.session_state.portfolio:
+                        if h["ticker"] == row['Ticker']:
+                            h["amount"] = new_amount
+                            break
+                    save_portfolio(st.session_state.portfolio)
+                    st.toast(f"Updated {row['Ticker']} amount to {new_amount:,.8f}", icon="✅")
+                    time.sleep(0.5)
+                    st.rerun()
+                else:
+                    st.error("Amount cannot be negative or invalid.")
+                    time.sleep(0.5)
+                    st.rerun()
 
-    # Process changes from data_editor for edits
-    if editor_state.get('edited_rows'):
-        for idx, changes in editor_state['edited_rows'].items():
-            original_id = df.loc[idx, 'id'] # Get the original unique ID from the DataFrame
-            
-            # Find the corresponding holding in st.session_state.portfolio using 'id'
-            for h_idx, holding in enumerate(st.session_state.portfolio):
-                if h_idx == original_id: # Assuming 'id' in DataFrame corresponds to list index
-                    if 'Amount' in changes:
-                        new_amount = changes['Amount']
-                        # Ensure new_amount is a number before comparison
-                        if isinstance(new_amount, (int, float)) and new_amount >= 0:
-                            holding["amount"] = new_amount
-                            save_portfolio(st.session_state.portfolio)
-                            st.toast(f"Updated {holding['ticker']} amount to {new_amount:,.8f}", icon="✅")
-                            time.sleep(0.5)
-                            st.rerun()
-                        else:
-                            st.error("Amount cannot be negative or invalid.")
-                            time.sleep(0.5)
-                            st.rerun()
-                    break
+    # Handle deletions based on the custom "Select" column
+    selected_for_deletion_indices = edited_df[edited_df['Select'] == True]['id'].tolist()
     
-    # Handle deletions from the data editor's internal mechanism
-    # 'deleted_rows' contains the indices of rows marked for deletion
-    if editor_state.get('deleted_rows'):
-        # Get the original IDs of the deleted rows
-        deleted_original_ids = [df.loc[i, 'id'] for i in editor_state['deleted_rows']]
-        
-        # Filter out the holdings based on their original IDs
-        st.session_state.portfolio = [
-            holding for h_idx, holding in enumerate(st.session_state.portfolio)
-            if h_idx not in deleted_original_ids
-        ]
-        save_portfolio(st.session_state.portfolio)
-        st.success("Deleted selected holdings.")
-        time.sleep(1)
-        st.rerun()
-    
+    if selected_for_deletion_indices:
+        if st.button("Delete Selected", type="primary"):
+            st.session_state.portfolio = [
+                holding for h_idx, holding in enumerate(st.session_state.portfolio)
+                if h_idx not in selected_for_deletion_indices
+            ]
+            save_portfolio(st.session_state.portfolio)
+            st.success("Deleted selected holdings.")
+            time.sleep(1)
+            st.rerun()
+    else:
+        st.button("Delete Selected", disabled=True)
+
 else:
     st.info("Your portfolio is empty. Add your first holding above.")
 
