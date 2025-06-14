@@ -4,13 +4,12 @@ import os
 import plotly.graph_objects as go
 import requests
 import time
-import pandas as pd # Import pandas for data manipulation with st.data_editor
+import pandas as pd
 
 DATA_FILE = "portfolio_data.json"
 
 st.set_page_config(page_title="Crypto Portfolio Tracker", layout="wide")
 
-# Modern clean SaaS-like styles
 st.markdown("""
 <style>
 /* Hide default Streamlit elements */
@@ -69,7 +68,6 @@ def get_coin_list():
         response = requests.get(url, timeout=10)
         response.raise_for_status()
         coins_data = response.json()
-        # Create map for both symbol and name to coingecko_id
         coin_map = {}
         for coin in coins_data:
             coin_map[coin['symbol'].lower()] = coin['id']
@@ -98,7 +96,6 @@ def save_portfolio(portfolio):
     with open(DATA_FILE, "w") as f:
         json.dump(portfolio, f, indent=4)
 
-# State initialization
 for key, default in {
     "portfolio": load_portfolio(),
     "ticker_not_found": False,
@@ -110,7 +107,6 @@ for key, default in {
 st.title("Crypto Portfolio Tracker")
 st.markdown("Track your cryptocurrency holdings with live prices from CoinGecko.")
 
-# Add holding form
 with st.form("add_coin_form"):
     col1, col2, col3 = st.columns([4, 3, 2])
     with col1:
@@ -164,8 +160,8 @@ for i, h in enumerate(st.session_state.portfolio):
     value = price * h["amount"]
     total_value += value
     holdings_data.append({
-        "id": i, # Unique ID for each row, helpful for tracking
-        "Select": False, # NEW: Add a boolean column for manual selection
+        "id": i,
+        "Select": False,
         "Ticker": h["ticker"],
         "Amount": h["amount"],
         "Price (USD)": f"${price:,.2f}",
@@ -173,15 +169,11 @@ for i, h in enumerate(st.session_state.portfolio):
     })
 
 if holdings_data:
-    # Build dataframe as usual
-    # Current dataframe
     df = pd.DataFrame(holdings_data)
 
-    # Reorder columns: Select comes first, then ID, then the rest
     column_order = ['Select', 'id', 'Ticker', 'Amount', 'Price (USD)', 'Value (USD)']
-    df = df[column_order]  # <- reorder columns here
+    df = df[column_order]
 
-    # Then pass to data_editor
     edited_df = st.data_editor(
         df,
         column_config={
@@ -226,15 +218,12 @@ if holdings_data:
         key="portfolio_editor"
     )
 
-
-    # Check for amount edits
     current_portfolio_tickers = {h["ticker"]: h for h in st.session_state.portfolio}
     
     for _, row in edited_df.iterrows():
         original_holding = current_portfolio_tickers.get(row['Ticker'])
         if original_holding:
             new_amount = row['Amount']
-            # Compare with original amount before committing changes
             if original_holding["amount"] != new_amount:
                 if isinstance(new_amount, (int, float)) and new_amount >= 0:
                     for h in st.session_state.portfolio:
@@ -250,7 +239,6 @@ if holdings_data:
                     time.sleep(0.5)
                     st.rerun()
 
-    # Handle deletions based on the custom "Select" column
     selected_for_deletion_indices = edited_df[edited_df['Select'] == True]['id'].tolist()
     
     if selected_for_deletion_indices:
@@ -271,10 +259,8 @@ else:
 
 st.divider()
 
-## Portfolio Summary
 st.markdown(f"<div class='total-value'>Total: ${total_value:,.2f}</div>", unsafe_allow_html=True)
 
-# Pie Chart
 if holdings_data:
     non_zero = [h for h in st.session_state.portfolio if prices.get(h["coingecko_id"], 0.0) * h["amount"] > 0]
     if non_zero:
