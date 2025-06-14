@@ -2,8 +2,8 @@ import streamlit as st
 import json
 import os
 import plotly.graph_objects as go
-import requests
-import pandas as pd
+import requests 
+import time # <--- NEW: Import time module
 
 # File to persist data
 DATA_FILE = "portfolio_data.json"
@@ -25,7 +25,7 @@ div[data-testid="stMainBlockContainer"] {
 </style>
 """, unsafe_allow_html=True)
 
-# --- CoinGecko API Functions ---
+# --- CoinGecko API Functions (from your provided code) ---
 @st.cache_data(ttl=3600) # Cache prices for 1 hour
 def get_crypto_prices(coin_ids):
     """
@@ -86,7 +86,7 @@ def get_coin_list():
         st.error(f"An unexpected error occurred while fetching coin list: {e}")
         return {}
 
-# Fetch the coin list once (this happens on every full rerun)
+# Fetch the coin list once
 coin_id_map = get_coin_list()
 
 def get_coingecko_id(ticker_or_name):
@@ -119,12 +119,13 @@ def save_portfolio(portfolio):
 # --- Streamlit Session State Initialization ---
 if "portfolio" not in st.session_state:
     st.session_state.portfolio = load_portfolio()
-if "selected_rows" not in st.session_state or not isinstance(st.session_state.selected_rows, set):
+if "selected_rows" not in st.session_state:
     st.session_state.selected_rows = set()
 if "edit_row" not in st.session_state:
     st.session_state.edit_row = None
 if "edit_original_amount" not in st.session_state:
     st.session_state.edit_original_amount = None
+# Re-adding these flags for inline error message display
 if "ticker_not_found" not in st.session_state:
     st.session_state.ticker_not_found = False
 if "ticker_warning_message" not in st.session_state:
@@ -143,24 +144,30 @@ st.subheader("Add New Holding")
 with st.form("add_coin_form"):
     col1_form, col2_form = st.columns([2, 1])
     with col1_form:
-        # Give a descriptive label for accessibility, hidden visually
         symbol_input = st.text_input("Crypto Ticker or Name", key="add_symbol_input", label_visibility="hidden").upper().strip()
+        
+        # Display the specific error message for invalid tickers here, below the input
+        if st.session_state.ticker_not_found:
+            st.error(st.session_state.ticker_warning_message) # <--- Re-added for inline display
+
     with col2_form:
-        # Give a descriptive label for accessibility, hidden visually
         amount_input = st.number_input("Crypto Amount", min_value=0.0, format="%.8f", key="add_amount_input", label_visibility="hidden")
     
     submitted = st.form_submit_button("Add Holding")
 
     if submitted:
+        # Reset the ticker error flags at the start of every submission attempt
+        st.session_state.ticker_not_found = False
+        st.session_state.ticker_warning_message = ""
+
         if symbol_input and amount_input > 0:
             coingecko_id = get_coingecko_id(symbol_input)
             if coingecko_id:
-                # Check if already in portfolio and update, otherwise add new
                 found = False
                 for i, holding in enumerate(st.session_state.portfolio):
                     if holding["coingecko_id"] == coingecko_id:
                         st.session_state.portfolio[i]["amount"] += amount_input
-                        st.success(f"Updated {symbol_input} amount to {st.session_state.portfolio[i]['amount']:,.8f}.")
+                        st.success(f"Updated {symbol_input} amount to {st.session_state.portfolio[i]['amount']:,.8f} units!") # <--- Reverted to st.success
                         found = True
                         break
                 if not found:
@@ -170,29 +177,23 @@ with st.form("add_coin_form"):
                         "amount": amount_input,
                         "cost_basis": 0.0 # Placeholder for future feature
                     })
-                    st.success(f"Added {amount_input:,.8f} {symbol_input} to your portfolio!")
+                    st.success(f"Added {amount_input:,.8f} {symbol_input} to your portfolio!") # <--- Reverted to st.success
                 
                 save_portfolio(st.session_state.portfolio)
-                st.session_state.ticker_not_found = False # Reset warning
-                st.session_state.ticker_warning_message = "" # Clear message
-                st.session_state.selected_rows.clear() # Clear selections on add
-                
-                # Manual setting of st.session_state for inputs removed, form handles reset
-                st.rerun() # Rerun to update the table and chart (and implicitly clear form)
+                st.session_state.selected_rows.clear()
+                time.sleep(2) # <--- ADDED: Pause for 2 seconds to allow message to be read
+                st.rerun() # Rerun to update the table and chart (and implicitly clear form inputs)
             else:
-                st.session_state.ticker_not_found = True
-                st.session_state.ticker_warning_message = f"Could not find CoinGecko ID for '{symbol_input}'. Please check the ticker/name."
-                
-                # Manual setting of st.session_state for inputs removed, form handles reset
-                st.rerun() # Rerun to show the error (and implicitly clear form)
+                st.session_state.ticker_not_found = True # <--- Re-added for inline display
+                st.session_state.ticker_warning_message = "Invalid Ticker: Please enter a valid cryptocurrency ticker or name." # <--- Re-added for inline display
+                time.sleep(2) # <--- ADDED: Pause for 2 seconds to allow message to be read
+                st.rerun() # Rerun to clear the form inputs
         else:
-            st.warning("Please enter both a crypto ticker/name and an amount greater than zero.")
-            # Manual setting of st.session_state for inputs removed, form handles reset
-            st.rerun() # Rerun to show the warning (and implicitly clear form)
+            st.warning("Please enter both a crypto ticker/name and an amount greater than zero.") # <--- Kept st.warning
+            time.sleep(2) # <--- ADDED: Pause for 2 seconds to allow message to be read
+            st.rerun() # Rerun to clear the form inputs
 
-# Display warning for ticker not found
-if st.session_state.ticker_not_found:
-    st.error(st.session_state.ticker_warning_message)
+# --- (The rest of your code for displaying holdings, delete button, edit mode, and chart) ---
 
 st.divider()
 st.subheader("Your Current Holdings")
@@ -234,7 +235,8 @@ if st.session_state.selected_rows:
         
         st.session_state.selected_rows.clear()
         save_portfolio(st.session_state.portfolio)
-        st.success("Selected holdings deleted.")
+        st.success("Selected holdings deleted.") # <--- Reverted to st.success
+        time.sleep(2) # <--- ADDED: Pause
         st.rerun()
 
 # --- Render Table Headers ---
@@ -273,7 +275,7 @@ else:
                     st.session_state.selected_rows.discard(current_symbol)
 
             row_controls[0].checkbox(
-                "Select " + symbol, # Descriptive label
+                "Select " + symbol, # Descriptive label for accessibility
                 value=initial_checkbox_state, 
                 key=checkbox_key,
                 on_change=update_selected_rows,
@@ -320,7 +322,8 @@ else:
                             break
                     save_portfolio(st.session_state.portfolio)
                     st.session_state.edit_row = None
-                    st.success(f"{symbol} updated to {new_amount:,.8f} units.")
+                    st.success(f"{symbol} updated to {new_amount:,.8f} units.") # <--- Reverted to st.success
+                    time.sleep(2) # <--- ADDED: Pause
                     st.rerun()
             else:
                 edit_action_cols[0].button("Save", key=f"save_{symbol}_button_disabled", disabled=True)
