@@ -44,7 +44,6 @@ def get_crypto_prices(coin_ids):
         
         prices = {}
         for coin_id in coin_ids:
-            # Ensure the structure matches what CoinGecko returns (e.g., {'bitcoin': {'usd': 60000}})
             if coin_id in data and 'usd' in data[coin_id]:
                 prices[coin_id] = data[coin_id]['usd']
             else:
@@ -120,7 +119,6 @@ def save_portfolio(portfolio):
 # --- Streamlit Session State Initialization ---
 if "portfolio" not in st.session_state:
     st.session_state.portfolio = load_portfolio()
-# Ensure selected_rows is always a set for efficient lookups
 if "selected_rows" not in st.session_state or not isinstance(st.session_state.selected_rows, set):
     st.session_state.selected_rows = set()
 if "edit_row" not in st.session_state:
@@ -131,7 +129,6 @@ if "ticker_not_found" not in st.session_state:
     st.session_state.ticker_not_found = False
 if "ticker_warning_message" not in st.session_state:
     st.session_state.ticker_warning_message = ""
-# Flag to control immediate deletion and clear selection
 if "perform_deletion" not in st.session_state:
     st.session_state.perform_deletion = False
 
@@ -146,9 +143,11 @@ st.subheader("Add New Holding")
 with st.form("add_coin_form"):
     col1_form, col2_form = st.columns([2, 1])
     with col1_form:
-        symbol_input = st.text_input("Ticker or Name (e.g., BTC, Bitcoin)", key="add_symbol_input").upper().strip()
+        # Give a descriptive label for accessibility, hidden visually
+        symbol_input = st.text_input("Crypto Ticker or Name", key="add_symbol_input", label_visibility="hidden").upper().strip()
     with col2_form:
-        amount_input = st.number_input("Amount", min_value=0.0, format="%.8f", key="add_amount_input")
+        # Give a descriptive label for accessibility, hidden visually
+        amount_input = st.number_input("Crypto Amount", min_value=0.0, format="%.8f", key="add_amount_input", label_visibility="hidden")
     
     submitted = st.form_submit_button("Add Holding")
 
@@ -177,12 +176,19 @@ with st.form("add_coin_form"):
                 st.session_state.ticker_not_found = False # Reset warning
                 st.session_state.ticker_warning_message = "" # Clear message
                 st.session_state.selected_rows.clear() # Clear selections on add
-                st.rerun()
+                
+                # Manual setting of st.session_state for inputs removed, form handles reset
+                st.rerun() # Rerun to update the table and chart (and implicitly clear form)
             else:
                 st.session_state.ticker_not_found = True
                 st.session_state.ticker_warning_message = f"Could not find CoinGecko ID for '{symbol_input}'. Please check the ticker/name."
+                
+                # Manual setting of st.session_state for inputs removed, form handles reset
+                st.rerun() # Rerun to show the error (and implicitly clear form)
         else:
             st.warning("Please enter both a crypto ticker/name and an amount greater than zero.")
+            # Manual setting of st.session_state for inputs removed, form handles reset
+            st.rerun() # Rerun to show the warning (and implicitly clear form)
 
 # Display warning for ticker not found
 if st.session_state.ticker_not_found:
@@ -217,22 +223,19 @@ for holding in st.session_state.portfolio:
     })
 
 # --- Delete Selected Button (Fix: Appears if 1 or more selected) ---
-# The button itself is controlled by this if condition based on the size of the set
 if st.session_state.selected_rows:
     if st.button("Delete Selected", type="primary", key="delete_selected_button"):
-        # Perform deletion
-        symbols_to_delete = st.session_state.selected_rows # Already a set
+        symbols_to_delete = st.session_state.selected_rows
         
-        # Filter out holdings whose tickers are in the selected_rows set
         st.session_state.portfolio = [
             holding for holding in st.session_state.portfolio
             if holding["ticker"] not in symbols_to_delete
         ]
         
-        st.session_state.selected_rows.clear() # Clear selected rows after deletion
+        st.session_state.selected_rows.clear()
         save_portfolio(st.session_state.portfolio)
         st.success("Selected holdings deleted.")
-        st.rerun() # Rerun to update the UI immediately
+        st.rerun()
 
 # --- Render Table Headers ---
 header_cols = st.columns([1, 2, 2, 2, 2])
@@ -246,7 +249,6 @@ header_cols[4].write("**Value (USD)**")
 if not holdings_data_display:
     st.info("No holdings added yet. Use the 'Add New Holding' section above.")
 else:
-    # Track which checkboxes are currently rendered. This helps in cleanup.
     current_checkbox_symbols = set() 
 
     for item in holdings_data_display:
@@ -254,50 +256,38 @@ else:
         amount = item["amount"]
         price = item["price"]
         value = item["value"]
-        current_checkbox_symbols.add(symbol) # Add to our set of currently displayed symbols
+        current_checkbox_symbols.add(symbol)
 
         cols = st.columns([1, 2, 2, 2, 2])
 
-        # --- First column: Checkbox + Edit ---
         with cols[0]:
             row_controls = st.columns([1, 1])
             checkbox_key = f"checkbox_{symbol}"
             
-            # 1. Checkbox issue fix:
-            # We explicitly check the state of the checkbox *after* a potential rerun.
-            # If a symbol was selected before the rerun, it should still be selected.
             initial_checkbox_state = symbol in st.session_state.selected_rows
             
-            # The on_change callback is key here for immediate updates to selected_rows
             def update_selected_rows(current_symbol):
-                # Check the current state of the checkbox, not the initial one
                 if st.session_state[f"checkbox_{current_symbol}"]:
                     st.session_state.selected_rows.add(current_symbol)
                 else:
                     st.session_state.selected_rows.discard(current_symbol)
-                # No st.rerun() here, just update the state.
-                # The primary "Delete Selected" button will trigger a rerun.
 
-            new_checkbox_state = row_controls[0].checkbox(
-                "Select " + symbol, # Provide a descriptive label
-                value=initial_checkbox_state,
+            row_controls[0].checkbox(
+                "Select " + symbol, # Descriptive label
+                value=initial_checkbox_state, 
                 key=checkbox_key,
                 on_change=update_selected_rows,
                 args=(symbol,),
                 label_visibility="hidden" # Hide the label visually
             )
-            # The direct update to st.session_state.selected_rows is now handled by on_change
-            # No need for the if new_checkbox_state / else st.session_state.selected_rows.discard lines here.
-
 
             if row_controls[1].button("✏️", key=f"edit_button_{symbol}"):
                 st.session_state.edit_row = symbol
-                # Find the actual holding object in the portfolio list to get its current amount
                 for holding in st.session_state.portfolio:
                     if holding["ticker"] == symbol:
                         st.session_state.edit_original_amount = holding["amount"]
                         break
-                st.rerun() # Rerun to properly render the edit mode immediately
+                st.rerun()
 
         # --- Edit Mode ---
         if st.session_state.edit_row == symbol:
@@ -307,16 +297,12 @@ else:
                     current_holding_amount = holding["amount"]
                     break
 
-                        # Before
-            new_amount = cols[2].number_input("Edit amount", value=current_holding_amount, key=f"edit_input_{symbol}_value", format="%.8f")
-
-            # After
             new_amount = cols[2].number_input(
-                "Edit amount for " + symbol, # Descriptive label
+                "Edit amount for " + symbol, 
                 value=current_holding_amount, 
                 key=f"edit_input_{symbol}_value", 
                 format="%.8f",
-                label_visibility="hidden" # Hide if you want it to appear label-less
+                label_visibility="hidden" # Hidden for cleaner UI
             )
 
             cols[1].write(symbol)
@@ -349,8 +335,6 @@ else:
             cols[3].write(f"${price:,.2f}")
             cols[4].write(f"${value:,.2f}")
     
-    # After rendering all rows, clean up selected_rows for items that no longer exist
-    # (e.g., if a holding was deleted while its checkbox was selected)
     st.session_state.selected_rows = st.session_state.selected_rows.intersection(current_checkbox_symbols)
 
 
