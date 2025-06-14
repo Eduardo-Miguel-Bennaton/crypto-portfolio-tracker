@@ -2,8 +2,9 @@ import streamlit as st
 import json
 import os
 import plotly.graph_objects as go
-import requests 
+import requests
 import time
+import pandas as pd # Import pandas for data manipulation with st.data_editor
 
 DATA_FILE = "portfolio_data.json"
 
@@ -27,11 +28,6 @@ button:hover {
     transform: scale(1.05);
 }
 
-/* Table cell alignment */
-div[data-testid="column"] > div:first-child {
-    padding-top: 0.3rem;
-}
-
 /* Section divider */
 hr {
     border-top: 2px solid #e0e0e0;
@@ -42,6 +38,11 @@ hr {
     font-size: 1.5rem;
     font-weight: 700;
     color: #2e7d32;
+}
+
+/* --- NEW: Hide the "Add row" button from the data editor --- */
+button[data-testid="stDataFrameAddRowButton"] {
+    display: none !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -71,7 +72,12 @@ def get_coin_list():
         response = requests.get(url, timeout=10)
         response.raise_for_status()
         coins_data = response.json()
-        return {coin['symbol'].lower(): coin['id'] for coin in coins_data} | {coin['name'].lower(): coin['id'] for coin in coins_data}
+        # Create map for both symbol and name to coingecko_id
+        coin_map = {}
+        for coin in coins_data:
+            coin_map[coin['symbol'].lower()] = coin['id']
+            coin_map[coin['name'].lower()] = coin['id']
+        return coin_map
     except Exception as e:
         st.error(f"Error fetching coin list: {e}")
         return {}
@@ -87,7 +93,8 @@ def load_portfolio():
             with open(DATA_FILE, "r") as f:
                 data = json.load(f)
                 return data if isinstance(data, list) else []
-        except:
+        except json.JSONDecodeError:
+            # Handle empty or malformed JSON file
             return []
     return []
 
@@ -98,9 +105,6 @@ def save_portfolio(portfolio):
 # State initialization
 for key, default in {
     "portfolio": load_portfolio(),
-    "selected_rows": set(),
-    "edit_row": None,
-    "edit_original_amount": None,
     "ticker_not_found": False,
     "ticker_warning_message": ""
 }.items():
@@ -142,7 +146,6 @@ with st.form("add_coin_form"):
                     })
                     st.success(f"Added {amount_input:,.8f} {symbol_input}")
                 save_portfolio(st.session_state.portfolio)
-                st.session_state.selected_rows.clear()
                 time.sleep(1)
                 st.rerun()
             else:
@@ -155,115 +158,122 @@ with st.form("add_coin_form"):
             time.sleep(1)
             st.rerun()
 
-st.divider()
-
-# Current Holdings Table
-st.subheader("Your Portfolio")
-
 coin_ids = list(set([h["coingecko_id"] for h in st.session_state.portfolio]))
 prices = get_crypto_prices(coin_ids)
 
-holdings_data, total_value = [], 0.0
-for h in st.session_state.portfolio:
+holdings_data = []
+total_value = 0.0
+for i, h in enumerate(st.session_state.portfolio):
     price = prices.get(h["coingecko_id"], 0.0)
     value = price * h["amount"]
     total_value += value
-    holdings_data.append({**h, "price": price, "value": value})
+    holdings_data.append({
+        "id": i, # Unique ID for each row, helpful for tracking deletions
+        "Ticker": h["ticker"],
+        "Amount": h["amount"],
+        "Price (USD)": f"${price:,.2f}",
+        "Value (USD)": f"${value:,.2f}"
+    })
 
 if holdings_data:
-    # Delete selected button
-    if st.session_state.selected_rows:
-        if st.button("Delete Selected", type="primary"):
-            st.session_state.portfolio = [
-                h for h in st.session_state.portfolio if h["ticker"] not in st.session_state.selected_rows
-            ]
-            st.session_state.selected_rows.clear()
-            save_portfolio(st.session_state.portfolio)
-            st.success("Deleted selected holdings.")
-            time.sleep(1)
-            st.rerun()
-    else:
-        st.button("Delete Selected", disabled=True)
+    df = pd.DataFrame(holdings_data)
 
-    header_cols = st.columns([1, 2, 2, 2, 2])
-    for i, header in enumerate([" ", "Ticker", "Amount", "Price (USD)", "Value (USD)"]):
-        if header.strip():  # Only render non-empty headers
-            header_cols[i].write(f"**{header}**")
+    # Streamlit Data Editor
+    edited_df = st.data_editor(
+        df,
+        column_config={
+            "id": st.column_config.Column(
+                "Select",
+                help="Select to delete",
+                width="small",
+                disabled=True # 'id' column should not be editable directly
+            ),
+            "Ticker": st.column_config.Column(
+                "Ticker",
+                help="Cryptocurrency Ticker",
+                width="medium",
+                disabled=True # Ticker should not be editable after adding
+            ),
+            "Amount": st.column_config.NumberColumn(
+                "Amount",
+                help="Your holding amount",
+                min_value=0.0,
+                format="%.8f",
+            ),
+            "Price (USD)": st.column_config.Column(
+                "Price (USD)",
+                help="Current price in USD",
+                disabled=True # Price is live, not editable
+            ),
+            "Value (USD)": st.column_config.Column(
+                "Value (USD)",
+                help="Total value in USD",
+                disabled=True # Value is calculated, not editable
+            )
+        },
+        hide_index=True,
+        # Changed back to "dynamic" to bring back the "Select" column (checkboxes)
+        num_rows="dynamic", 
+        use_container_width=True,
+        key="portfolio_editor"
+    )
 
+    # Get the state of the data editor safely
+    editor_state = st.session_state.get('portfolio_editor', {})
 
-    valid_symbols = set()
-
-    for item in holdings_data:
-        symbol, amount, price, value = item["ticker"], item["amount"], item["price"], item["value"]
-        valid_symbols.add(symbol)
-        row = st.columns([1, 2, 2, 2, 2])
-
-        with row[0]:
-            left, right = st.columns([1, 1])
-            cb_key = f"cb_{symbol}"
-
-            if cb_key not in st.session_state:
-                st.session_state[cb_key] = False
-
-            def update_selection(sym=symbol, key=cb_key):
-                if st.session_state[key]:
-                    st.session_state.selected_rows.add(sym)
-                else:
-                    st.session_state.selected_rows.discard(sym)
-
-            left.checkbox("", value=(symbol in st.session_state.selected_rows),
-                key=cb_key, on_change=update_selection)
-
-            if right.button("✏️", key=f"edit_{symbol}"):
-                st.session_state.edit_row, st.session_state.edit_original_amount = symbol, amount
-                st.rerun()
-
-        if st.session_state.edit_row == symbol:
-            row[1].write(symbol)
-            new_amt = row[2].number_input("Edit", value=amount, key=f"edit_input_{symbol}",
-                                           format="%.8f", label_visibility="hidden")
-            row[3].write(f"${price:,.2f}")
-            row[4].write(f"${price*new_amt:,.2f}")
-
-            save_col, discard_col = st.columns([1, 1])
-            if new_amt != st.session_state.edit_original_amount:
-                if save_col.button("💾 Save", key=f"save_{symbol}"):
-                    for h in st.session_state.portfolio:
-                        if h["ticker"] == symbol:
-                            h["amount"] = new_amt
-                    save_portfolio(st.session_state.portfolio)
-                    st.session_state.edit_row = None
-                    time.sleep(1)
-                    st.rerun()
-            else:
-                save_col.button("Save", disabled=True, key=f"save_disabled_{symbol}")
-
-            if discard_col.button("Cancel", key=f"cancel_{symbol}"):
-                st.session_state.edit_row = None
-                st.rerun()
-        else:
-            row[1].write(symbol)
-            row[2].write(f"{amount:,.8f}")
-            row[3].write(f"${price:,.2f}")
-            row[4].write(f"${value:,.2f}")
-
-    # Cleanup orphan checkboxes
-    st.session_state.selected_rows = st.session_state.selected_rows.intersection(valid_symbols)
+    # Process changes from data_editor for edits
+    if editor_state.get('edited_rows'):
+        for idx, changes in editor_state['edited_rows'].items():
+            original_id = df.loc[idx, 'id'] # Get the original unique ID from the DataFrame
+            
+            # Find the corresponding holding in st.session_state.portfolio using 'id'
+            for h_idx, holding in enumerate(st.session_state.portfolio):
+                if h_idx == original_id: # Assuming 'id' in DataFrame corresponds to list index
+                    if 'Amount' in changes:
+                        new_amount = changes['Amount']
+                        # Ensure new_amount is a number before comparison
+                        if isinstance(new_amount, (int, float)) and new_amount >= 0:
+                            holding["amount"] = new_amount
+                            save_portfolio(st.session_state.portfolio)
+                            st.toast(f"Updated {holding['ticker']} amount to {new_amount:,.8f}", icon="✅")
+                            time.sleep(0.5)
+                            st.rerun()
+                        else:
+                            st.error("Amount cannot be negative or invalid.")
+                            time.sleep(0.5)
+                            st.rerun()
+                    break
+    
+    # Handle deletions from the data editor's internal mechanism
+    # 'deleted_rows' contains the indices of rows marked for deletion
+    if editor_state.get('deleted_rows'):
+        # Get the original IDs of the deleted rows
+        deleted_original_ids = [df.loc[i, 'id'] for i in editor_state['deleted_rows']]
+        
+        # Filter out the holdings based on their original IDs
+        st.session_state.portfolio = [
+            holding for h_idx, holding in enumerate(st.session_state.portfolio)
+            if h_idx not in deleted_original_ids
+        ]
+        save_portfolio(st.session_state.portfolio)
+        st.success("Deleted selected holdings.")
+        time.sleep(1)
+        st.rerun()
+    
 else:
     st.info("Your portfolio is empty. Add your first holding above.")
 
 st.divider()
 
-# Summary Section
-st.subheader("Portfolio Summary")
+## Portfolio Summary
 st.markdown(f"<div class='total-value'>Total: ${total_value:,.2f}</div>", unsafe_allow_html=True)
 
 # Pie Chart
 if holdings_data:
-    non_zero = [h for h in holdings_data if h["value"] > 0]
+    non_zero = [h for h in st.session_state.portfolio if prices.get(h["coingecko_id"], 0.0) * h["amount"] > 0]
     if non_zero:
         labels = [h["ticker"] for h in non_zero]
-        values = [h["value"] for h in non_zero]
+        values = [prices.get(h["coingecko_id"], 0.0) * h["amount"] for h in non_zero]
         fig = go.Figure(data=[go.Pie(labels=labels, values=values, hole=0.4)])
         fig.update_layout(margin=dict(t=20, b=20, l=0, r=0))
         st.plotly_chart(fig, use_container_width=True)
