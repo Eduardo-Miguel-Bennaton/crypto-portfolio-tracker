@@ -12,14 +12,13 @@ st.set_page_config(page_title="Crypto Portfolio Tracker", layout="wide")
 
 st.markdown("""
 <style>
-/* Hide default Streamlit elements */
+
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
 .stDeployButton {display: none;}
 header {visibility: hidden;}
 div[data-testid="stMainBlockContainer"] { padding-top: 1rem; }
 
-/* Smooth buttons */
 button {
     transition: all 0.2s ease;
 }
@@ -38,8 +37,6 @@ hr {
     font-weight: 700;
     color: #2e7d32;
 }
-
-/* REMOVED: No longer need to hide the "Add row" button as num_rows is now fixed */
 </style>
 """, unsafe_allow_html=True)
 
@@ -108,14 +105,19 @@ st.title("Crypto Portfolio Tracker")
 st.markdown("Track your cryptocurrency holdings with live prices from CoinGecko.")
 
 with st.form("add_coin_form"):
-    col1, col2, col3 = st.columns([4, 3, 2])
+    col1, col2, col3 = st.columns([5, 4, 2])  # Adjust the column widths as needed
     with col1:
-        symbol_input = st.text_input("Crypto Ticker or Name", key="add_symbol_input", label_visibility="hidden").upper().strip()
+        symbol_input = st.text_input(
+            "Crypto Ticker or Name",
+            key="add_symbol_input",
+            label_visibility="hidden",
+            placeholder="Write cryptocurrency ticker"  # Add placeholder text
+        ).upper().strip()
         if st.session_state.ticker_not_found:
             st.error(st.session_state.ticker_warning_message)
     with col2:
         amount_input = st.number_input("Amount", min_value=0.0, format="%.8f", key="add_amount_input", label_visibility="hidden")
-    submitted = col3.form_submit_button("Add")
+    submitted = col3.form_submit_button("Add", type="primary")  # Ensure the button is within the correct column
 
     if submitted:
         st.session_state.ticker_not_found = False
