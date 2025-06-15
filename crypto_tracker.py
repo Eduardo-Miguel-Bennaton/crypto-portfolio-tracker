@@ -130,6 +130,7 @@ with st.form("add_coin_form"):
     if submitted:
         st.session_state.ticker_not_found = False
         st.session_state.ticker_warning_message = ""
+
         if symbol_input and amount_input > 0:
             coingecko_id = get_coingecko_id(symbol_input)
             if coingecko_id:
@@ -137,7 +138,6 @@ with st.form("add_coin_form"):
                 for holding in st.session_state.portfolio:
                     if holding["coingecko_id"] == coingecko_id:
                         holding["amount"] += amount_input
-                        st.success(f"Updated {symbol_input} to {holding['amount']:,.8f}")
                         found = True
                         break
                 if not found:
@@ -146,19 +146,13 @@ with st.form("add_coin_form"):
                         "coingecko_id": coingecko_id,
                         "amount": amount_input
                     })
-                    st.success(f"Added {amount_input:,.8f} {symbol_input}")
                 save_portfolio(st.session_state.portfolio)
-                time.sleep(1)
-                st.experimental_rerun()
+                st.toast(f"Successfully added {amount_input} {symbol_input}")
             else:
                 st.session_state.ticker_not_found = True
                 st.session_state.ticker_warning_message = "Invalid ticker. Please enter a valid crypto."
-                time.sleep(1)
-                st.experimental_rerun()
         else:
             st.warning("Fill both fields.")
-            time.sleep(1)
-            st.experimental_rerun()
 
 coin_ids = list(set([h["coingecko_id"] for h in st.session_state.portfolio]))
 prices = get_crypto_prices(coin_ids)
@@ -258,7 +252,7 @@ if holdings_data:
                 if h_idx not in selected_for_deletion_indices
             ]
             save_portfolio(st.session_state.portfolio)
-            st.success("Deleted selected holdings.")
+            st.toast("Deleted selected holdings.")
             time.sleep(1)
             st.experimental_rerun()
     else:
