@@ -239,7 +239,7 @@ if holdings_data:
                     time.sleep(0.5)
                     st.rerun()
 
-    selected_for_deletion_indices = edited_df[edited_df['Select'] == True]['id'].tolist()
+    selected_for_deletion_indices = edited_df[edited_df['Select']]['id'].tolist()
     
     if selected_for_deletion_indices:
         if st.button("Delete Selected", type="primary"):
