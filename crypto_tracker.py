@@ -12,7 +12,6 @@ st.set_page_config(page_title="Crypto Portfolio Tracker", layout="wide")
 
 st.markdown("""
 <style>
-
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
 .stDeployButton {display: none;}
@@ -105,19 +104,28 @@ st.title("Crypto Portfolio Tracker")
 st.markdown("Track your cryptocurrency holdings with live prices from CoinGecko.")
 
 with st.form("add_coin_form"):
-    col1, col2, col3 = st.columns([5, 4, 2])  # Adjust the column widths as needed
+    col1, col2, col3 = st.columns([3, 3, 1])
     with col1:
         symbol_input = st.text_input(
-            "Crypto Ticker or Name",
+            "",
             key="add_symbol_input",
-            label_visibility="hidden",
-            placeholder="Write cryptocurrency ticker"  # Add placeholder text
+            placeholder="Crypto Ticker or Name (e.g. BTC)",
+            label_visibility="collapsed"
         ).upper().strip()
         if st.session_state.ticker_not_found:
             st.error(st.session_state.ticker_warning_message)
     with col2:
-        amount_input = st.number_input("Amount", min_value=0.0, format="%.8f", key="add_amount_input", label_visibility="hidden")
-    submitted = col3.form_submit_button("Add", type="primary")  # Ensure the button is within the correct column
+        amount_input = st.number_input(
+            "",
+            min_value=0.0,
+            format="%.8f",
+            step=0.0001,
+            key="add_amount_input",
+            label_visibility="collapsed",
+            placeholder="Amount"
+        )
+    with col3:
+        submitted = st.form_submit_button("Add")
 
     if submitted:
         st.session_state.ticker_not_found = False
@@ -141,16 +149,16 @@ with st.form("add_coin_form"):
                     st.success(f"Added {amount_input:,.8f} {symbol_input}")
                 save_portfolio(st.session_state.portfolio)
                 time.sleep(1)
-                st.rerun()
+                st.experimental_rerun()
             else:
                 st.session_state.ticker_not_found = True
                 st.session_state.ticker_warning_message = "Invalid ticker. Please enter a valid crypto."
                 time.sleep(1)
-                st.rerun()
+                st.experimental_rerun()
         else:
             st.warning("Fill both fields.")
             time.sleep(1)
-            st.rerun()
+            st.experimental_rerun()
 
 coin_ids = list(set([h["coingecko_id"] for h in st.session_state.portfolio]))
 prices = get_crypto_prices(coin_ids)
@@ -221,7 +229,7 @@ if holdings_data:
     )
 
     current_portfolio_tickers = {h["ticker"]: h for h in st.session_state.portfolio}
-    
+
     for _, row in edited_df.iterrows():
         original_holding = current_portfolio_tickers.get(row['Ticker'])
         if original_holding:
@@ -235,14 +243,14 @@ if holdings_data:
                     save_portfolio(st.session_state.portfolio)
                     st.toast(f"Updated {row['Ticker']} amount to {new_amount:,.8f}", icon="✅")
                     time.sleep(0.5)
-                    st.rerun()
+                    st.experimental_rerun()
                 else:
                     st.error("Amount cannot be negative or invalid.")
                     time.sleep(0.5)
-                    st.rerun()
+                    st.experimental_rerun()
 
     selected_for_deletion_indices = edited_df[edited_df['Select']]['id'].tolist()
-    
+
     if selected_for_deletion_indices:
         if st.button("Delete Selected", type="primary"):
             st.session_state.portfolio = [
@@ -252,7 +260,7 @@ if holdings_data:
             save_portfolio(st.session_state.portfolio)
             st.success("Deleted selected holdings.")
             time.sleep(1)
-            st.rerun()
+            st.experimental_rerun()
     else:
         st.button("Delete Selected", disabled=True)
 
